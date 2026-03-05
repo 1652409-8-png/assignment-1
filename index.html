@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智學燈塔 (穩定版)</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js"></script>
+    <style>
+        :root {
+            --primary-purple: #9b59b6; --light-purple: #d7bde2; --dark-purple: #8e44ad;
+            --correct-green: #2ecc71; --incorrect-red: #e74c3c; --warning-orange: #f39c12;
+            --neutral-gray: #8395a7; --bg-color: #f4f0f7; --text-color: #34495e;
+            --card-bg: #ffffff; --shadow: 0 4px 15px rgba(0, 0, 0, 0.1); --border-radius: 12px;
+        }
+        /* 強制全域防複製 */
+        * { user-select: none !important; -webkit-user-select: none; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0; padding: 20px; background-color: var(--bg-color); color: var(--text-color);
+            display: flex; justify-content: center; align-items: flex-start; min-height: 100vh;
+        }
+        .container { background-color: var(--card-bg); padding: 30px; border-radius: var(--border-radius); box-shadow: var(--shadow); width: 100%; max-width: 800px; margin-top: 20px; }
+        h1, h2, h3 { color: var(--dark-purple); text-align: center; margin-bottom: 10px; }
+        
+        /* 核心修復：頁面切換邏輯 */
+        .page { display: none; /* 由 JS 直接控制 */ flex-direction: column; gap: 15px; }
+        
+        /* 卡通風格按鈕 */
+        .button, .mode-button, .option-button {
+            padding: 15px 20px; margin: 8px auto; border: none; border-radius: 50px;
+            background-image: linear-gradient(45deg, var(--primary-purple), var(--dark-purple));
+            color: white; font-size: 1.1em; font-weight: 500; cursor: pointer; transition: all 0.2s ease;
+            box-shadow: 0 3px 10px rgba(142, 68, 173, 0.3); text-align: center; width: 90%;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            z-index: 9999 !important; position: relative;
+        }
+        .button:hover, .mode-button:hover, .option-button:hover {
+             background-image: linear-gradient(45deg, var(--dark-purple), #732d91);
+             transform: translateY(-3px); box-shadow: 0 5px 15px rgba(142, 68, 173, 0.5);
+        }
+        .button:active, .mode-button:active, .option-button:active { transform: scale(0.95); }
+        
+        #modeSelectionGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
+        .mode-button { background-image: none; background-color: #f8f5fa; border: 1px solid var(--light-purple); color: var(--dark-purple); flex-direction: column; align-items: flex-start; border-radius: var(--border-radius); }
+        .mode-button h3 { display: flex; align-items: center; gap: 8px; font-size: 1.2em;}
+        .mode-button p { margin: 0; font-size: 0.9em; color: var(--neutral-gray); line-height: 1.5; }
+
+        /* UI 比例調整 */
+        #quizPage { min-height: 75vh; }
+        .quiz-header-container { flex-shrink: 0; }
+        .quiz-progress-bar-container { width: 100%; background-color: #e9ecef; border-radius: 8px; height: 12px; overflow: hidden; margin-top: 10px; }
+        .quiz-progress-bar { height: 100%; width: 0%; background-image: linear-gradient(45deg, var(--light-purple), var(--primary-purple)); border-radius: 8px; transition: width 0.4s ease-out; }
+        
+        .question-card { flex-shrink: 0; padding: 10px; } /* 縮小題目框 */
+        .question-text { font-size: 1.3em; line-height: 1.6; white-space: normal; letter-spacing: normal; text-align: center; } /* 修正空格 */
+        
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; flex-grow: 1; align-items: stretch; padding-top: 15px; } /* 2x2 四宮格 */
+        .option-button { width: 100%; height: 100%; margin: 0; padding: 25px; font-size: 1.3em; } /* 放大按鈕 */
+
+        /* 答錯回饋區域 */
+        #feedback-area {
+            display: none; /* 預設隱藏 */
+            margin-top: 15px;
+            padding: 20px;
+            border: 2px solid var(--incorrect-red);
+            border-radius: var(--border-radius);
+            background-color: #fff6f5;
+        }
+        #feedback-area h4 { color: var(--incorrect-red); margin: 0 0 10px; }
+        #feedback-area p { color: var(--text-color); margin: 0 0 15px; }
+        #feedback-area .button { width: 100%; }
+
+        .feedback-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 10000; }
+        .feedback-modal-overlay.active { display: flex; animation: fadeIn 0.3s; }
+        .feedback-modal-content { background: #fff; padding: 30px; border-radius: 15px; width: 90%; max-width: 400px; text-align: center; transform: scale(0.7); animation: zoomIn 0.3s forwards; }
+        @keyframes zoomIn { to { transform: scale(1); } }
+        
+        .timer-title { font-size: 1.8em; }
+        .timer-display { font-size: 4.5em; font-weight: bold; color: var(--primary-purple); margin: 20px 0; }
+        .timer-controls button { width: auto; padding: 10px 25px; display: inline-block; margin: 5px; border-radius: 25px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>智學燈塔</h1>
+        
+        <div class="page" id="mainMenuPage" style="display: flex;">
+             <div id="modeSelectionGrid">
+                <button class="mode-button" data-mode="A"><h3>📖 English Vocabulary</h3><p>English UI. Multiple choice for correct spelling.</p></button>
+                <button class="mode-button" data-mode="B"><h3>📖 English Grammar</h3><p>English UI. Provides tense explanation on mistakes.</p></button>
+                <button class="mode-button" data-mode="C"><h3>📖 English Mixed</h3><p>A mix of vocabulary and grammar questions.</p></button>
+                <button class="mode-button" data-mode="D"><h3>📐 數學公式翻牌</h3><p>記憶大考驗，配對公式與名稱。</p></button>
+                <button class="mode-button" data-mode="E"><h3>📐 數學綜合習題</h3><p>繁中介面，隨機生成幾何與代數題。</p></button>
+                <button class="mode-button" data-mode="F"><h3>📐 數學混合練習</h3><p>公式選擇題 + 綜合計算題。</p></button>
+            </div>
+            <button class="button" id="pomodoro-menu-btn">⏰ 番茄鐘計時器</button>
+        </div>
+        
+        <div class="page" id="quizPage">
+            <div class="quiz-header-container"><div class="quiz-header"><h2 id="quiz-title"></h2><p>第 <span id="question-counter">1</span> / 20 題</p></div><div class="quiz-progress-bar-container"><div class="quiz-progress-bar" id="quiz-progress-bar"></div></div></div>
+            <div class="question-card"><p id="question-text"></p></div>
+            <div id="answer-area" class="options-grid"></div>
+            <!-- 答錯時顯示的區域 -->
+            <div id="feedback-area">
+                <h4>答案解析</h4>
+                <p id="feedback-answer"></p>
+                <p id="feedback-explanation"></p>
+                <button class="button" id="feedback-next-btn">下一題</button>
+            </div>
+            <button class="button back-to-main-menu-btn">回主選單 🏠</button>
+        </div>
+        
+        <div class="page" id="pomodoroMenuPage">
+            <h2 class="timer-title">番茄鐘模式</h2>
+            <button class="button" id="start-focus-btn">🍎 開始專注 (25min)</button>
+            <button class="button" id="start-break-btn">☕ 開始休息 (5min)</button>
+            <button class="button back-to-main-menu-btn" style="background-image:none; background-color:var(--neutral-gray)">回主選單 🏠</button>
+        </div>
+
+        <div class="page" id="matchingGamePage">
+            <h2>數學公式翻牌</h2>
+            <div id="matchingGameGrid"></div>
+            <p id="match-game-status"></p>
+            <button class="button back-to-main-menu-btn">回主選單 🏠</button>
+        </div>
+
+        <div class="page" id="pomodoroPage">
+            <h2 id="pomodoro-title" class="timer-title"></h2>
+            <div id="timer-display" class="timer-display">25:00</div>
+            <div class="timer-controls">
+                <button id="timer-pause" class="button">暫停</button>
+                <button id="timer-resume" class="button" style="display: none;">繼續</button>
+                <button class="button back-to-main-menu-btn">回主選單 🏠</button>
+            </div>
+        </div>
+        
+        <div class="page" id="resultPage">
+            <h2>練習結束！</h2>
+            <p id="result-text" style="text-align:center; font-size: 1.5em; margin: 20px 0;"></p>
+            <button class="button back-to-main-menu-btn">回主選單 🏠</button>
+        </div>
+
+    </div>
+
+    <!-- Modals -->
+    <div class="feedback-modal-overlay" id="encouragement-modal">
+        <div class="feedback-modal-content">
+            <p id="encouragement-text" style="font-size: 1.5em; font-weight: bold; margin-bottom: 20px;"></p>
+            <button id="encouragement-ok-btn" class="button">出發！</button>
+        </div>
+    </div>
+    <div class="feedback-modal-overlay" id="correct-modal">
+        <div class="feedback-modal-content">
+            <p id="correct-feedback-text" style="font-size: 1.4em; font-weight: bold;"></p>
+        </div>
+    </div>
+    <div class="feedback-modal-overlay" id="incorrect-modal">
+        <div class="feedback-modal-content">
+            <span class="feedback-icon" style="color:var(--incorrect-red);">✗</span><h2>答錯了！</h2>
+            <div class="explanation-box"><h4 id="correct-answer-title"></h4><p id="correct-answer-text"></p><h4 id="explanation-title"></h4><p id="explanation-text"></p></div>
+            <button id="next-question-btn" class="button">下一題</button>
+        </div>
+    </div>
+    <div class="feedback-modal-overlay" id="copy-warning-modal">
+        <div class="feedback-modal-content">
+            <span class="feedback-icon" style="color:var(--warning-orange);">⚠️</span><p>為了公平起見，<br>本站題目禁止複製哦！</p>
+        </div>
+    </div>
+    <div class="feedback-modal-overlay" id="alert-modal">
+        <div class="feedback-modal-content">
+            <p id="alert-text" style="font-size:1.2em;"></p>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DATA & GENERATORS ---
+        const questionFactory = {
+            englishData: [
+                { type: 'grammar', q: 'She ___ interested in art.', a: 'is', o: ['are', 'am', 'be'], tense: 'Present Simple', exp: '主詞為第三人稱單數 She，動詞用 is。' },
+                { type: 'grammar', q: 'He ___ to school every day.', a: 'goes', o: ['go', 'going', 'gone'], tense: 'Present Simple', exp: '主詞為第三人稱單數 He，且為現在式，動詞需加 es。' },
+                { type: 'grammar', q: 'The book was ___ by a famous author.', a: 'written', o: ['write', 'wrote', 'writing'], tense: 'Passive Voice (Past)', exp: '被動語態 (was + V.p.p)，動詞需用過去分詞 written。' },
+                { type: 'grammar', q: 'If I ___ you, I would study harder.', a: 'were', o: ['am', 'was', 'be'], tense: 'Subjunctive Mood', exp: '與現在事實相反的假設語氣，be 動詞不論人稱一律用 were。' },
+                { type: 'grammar', q: 'My brother is taller ___ me.', a: 'than', o: ['then', 'as', 'that'], tense: 'Comparative', exp: '比較級 (taller) 後面應接 than。' },
+                { type: 'grammar', q: 'We have lived here ___ 2010.', a: 'since', o: ['for', 'from', 'at'], tense: 'Present Perfect', exp: '現在完成式中，since 後接時間點，for 後接時間長度。' },
+                { type: 'grammar', q: 'I am looking forward to ___ you.', a: 'seeing', o: ['see', 'saw', 'seen'], tense: 'Gerund', exp: 'look forward to 後面需接動名詞 (V-ing)。' },
+                { type: 'grammar', q: 'This is the ___ movie I have ever seen.', a: 'best', o: ['good', 'better', 'goodest'], tense: 'Superlative', exp: '最高級 (the... I have ever seen) 需用 best。' },
+                { type: 'vocab', word: 'apple', exp: '正確的拼寫是 apple。' }, { type: 'vocab', word: 'bicycle', exp: '正確的拼寫是 bicycle。' }, { type: 'vocab', word: 'beautiful', exp: '正確的拼寫是 beautiful。' },
+                { type: 'vocab', word: 'sincerely', exp: '正確的拼寫是 sincerely。' }, { type: 'vocab', word: 'kitchen', exp: '正確的拼寫是 kitchen。' }, { type: 'vocab', word: 'library', exp: '正確的拼寫是 library。' },
+                { type: 'vocab', word: 'umbrella', exp: '正確的拼寫是 umbrella。' }, { type: 'vocab', word: 'computer', exp: '正確的拼寫是 computer。' }, { type: 'vocab', word: 'chocolate', exp: '正確的拼寫是 chocolate。' },
+                { type: 'vocab', word: 'vacation', exp: '正確的拼寫是 vacation。' }, { type: 'vocab', word: 'language', exp: '正確的拼寫是 language。' }, { type: 'vocab', word: 'exercise', exp: '正確的拼寫是 exercise。' },
+            ],
+            mathFormulas: [
+                { id: 1, name: '三角形面積', formula: 'A = \\frac{1}{2}bh' }, { id: 2, name: '矩形面積', formula: 'A = lw' },
+                { id: 3, name: '圓形面積', formula: 'A = \\pi r^2' }, { id: 4, name: '圓周長', formula: 'C = 2\\pi r' },
+                { id: 5, name: '梯形面積', formula: 'A = \\frac{1}{2}(a+b)h' }, { id: 6, name: '畢氏定理', formula: 'a^2 + b^2 = c^2' },
+                { id: 7, name: '一元二次通解', formula: 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}' }, { id: 8, name: '斜率', formula: 'm = \\frac{y_2-y_1}{x_2-x_1}' }
+            ],
+            encouragementPhrases: [
+                '加油！你是最棒的！🌟', '專注的你最有魅力✨', '每一題都是進步的腳印👣', '持之以恆，必有所成！💪', '知識就是力量！💡',
+                '今天也要比昨天更努力一點！📈', '你離成功又近了一步！🚀', '相信自己，你能做到！🌈', '學習的過程充滿樂趣！🎉',
+                '每一次思考，都是智慧的成長！🧠', '堅持下去，勝利就在眼前！🏆', '你是學習的王者！👑', '讓知識的燈塔引導你！🧭',
+                '用功的你最可愛！💖', '現在的努力，將來會感謝你！💫', '再試一次，你一定行！👍', '錯誤是學習的機會！💡',
+                '做得很好！保持下去！💯', '繼續努力，突破自我！🚀', '小小的努力，大大的進步！🌱'
+            ],
+            getRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; },
+            shuffle(arr) { return arr.sort(() => Math.random() - 0.5); },
+            generateSpellingErrors(word) {
+                const errors = new Set();
+                while (errors.size < 3) {
+                    const type = Math.floor(Math.random() * 3); let err = word;
+                    if (type === 0 && err.length > 1) { const i = Math.floor(Math.random()*(err.length - 1)); err = err.substring(0, i) + err[i+1] + err[i] + err.substring(i+2); }
+                    else if (type === 1) { const i = Math.floor(Math.random()*err.length); err = err.substring(0, i) + this.getRandom('abcdefghijklmnopqrstuvwxyz') + err.substring(i+1); }
+                    else { const i = Math.floor(Math.random()*err.length); err = Math.random() > 0.5 && err.length > 3 ? err.substring(0, i) + err.substring(i + 1) : err.substring(0, i) + this.getRandom('abcdefghijklmnopqrstuvwxyz') + err.substring(i); }
+                    if (err !== word && err && err.length > 0) errors.add(err);
+                } return Array.from(errors);
+            },
+            generateEnglish(type, lang) {
+                const source = type === 'mixed' ? this.englishData : this.englishData.filter(i => i.type === type); const item = this.getRandom(source);
+                if (item.type === 'vocab') {
+                    const question = lang === 'en' ? 'Which spelling is correct?' : '下列哪個單字拼寫正確？';
+                    const options = this.shuffle([item.word, ...this.generateSpellingErrors(item.word)]);
+                    return { question, options, answer: item.word, tense: 'Spelling', explanation: item.exp };
+                } else {
+                    const question = lang === 'en' ? `Fill in the blank: ${item.q}` : `請填空：${item.q}`;
+                    const options = this.shuffle([item.a, ...item.o]);
+                    return { question, options, answer: item.a, tense: item.tense, explanation: item.exp };
+                }
+            },
+            generateMathProblem() { return Math.random() > 0.5 ? this.generateAlgebra() : this.generateGeometry(); },
+            generateAlgebra() {
+                const x = this.getRandom([-3,-2,-1,1,2,3,4,5]); const a = this.getRandom([2,3,4,5]);
+                const b = this.getRandom([-9,-8,-7,-6,-5,-4,-3,-2,2,3,4,5,6,7,8,9]); const c = a * x + b;
+                const explanation = `${a}x = ${c} ${b >= 0 ? '-' : '+'} ${Math.abs(b)} => ${a}x = ${c - b} => x = ${(c - b) / a} => x = ${x}`;
+                return { question: `解方程式: $${a}x ${b >= 0 ? '+' : '-'} ${Math.abs(b)} = ${c}$`, options: this.shuffle([x, x+1, x-1, x+2]), answer: x, tense: '一元一次方程式', explanation };
+            },
+            generateGeometry() {
+                 const h = (this.getRandom([3,4,5,6]))*2; const b = this.getRandom([5,6,7,8,9,10]); const correct = (b * h) / 2;
+                 return { question: `底為 $${b}$，高為 $${h}$ 的三角形面積為何？`, options: this.shuffle([correct, correct+2, correct-1, correct*2]), answer: correct, tense: '三角形面積', explanation: `三角形面積公式為 (底 × 高) / 2，因此 (${b} × ${h}) / 2 = ${correct}。` };
+            },
+            generateFormulaQuestion() {
+                const correct = this.getRandom(this.mathFormulas);
+                const wrong = this.mathFormulas.filter(f => f.name !== correct.name);
+                const options = this.shuffle([correct.formula, ...this.shuffle(wrong).slice(0, 3).map(f=>f.formula)]);
+                return { question: `「${correct.name}」的公式為何？`, options, answer: correct.formula, tense: '數學公式', explanation: `正確公式為 ${correct.formula}` };
+            },
+        };
+
+        const dom = {
+            pages: {
+                mainMenu: document.getElementById('mainMenuPage'),
+                quiz: document.getElementById('quizPage'),
+                pomodoroMenu: document.getElementById('pomodoroMenuPage'),
+                matchingGame: document.getElementById('matchingGamePage'),
+                pomodoro: document.getElementById('pomodoroPage'),
+                result: document.getElementById('resultPage'),
+            },
+            modals: {
+                encouragement: document.getElementById('encouragement-modal'),
+                correct: document.getElementById('correct-modal'),
+                incorrect: document.getElementById('incorrect-modal'),
+                copyWarning: document.getElementById('copy-warning-modal'),
+                alert: document.getElementById('alert-modal'),
+            },
+            encouragement: {
+                text: document.getElementById('encouragement-text'),
+                okBtn: document.getElementById('encouragement-ok-btn')
+            },
+            quiz: {
+                progressBar: document.getElementById('quiz-progress-bar'),
+                answerArea: document.getElementById('answer-area'),
+                questionText: document.getElementById('question-text'),
+                title: document.getElementById('quiz-title'),
+                counter: document.getElementById('question-counter'),
+                feedbackArea: document.getElementById('feedback-area'),
+                feedbackAnswer: document.getElementById('feedback-answer'),
+                feedbackExplanation: document.getElementById('feedback-explanation'),
+                feedbackNextBtn: document.getElementById('feedback-next-btn'),
+            },
+            matchingGame: {
+                grid: document.getElementById('matchingGameGrid'),
+                status: document.getElementById('match-game-status')
+            },
+            pomodoro: {
+                title: document.getElementById('pomodoro-title'),
+                display: document.getElementById('timer-display'),
+                pauseBtn: document.getElementById('timer-pause'),
+                resumeBtn: document.getElementById('timer-resume'),
+            },
+            correctModal: {
+                feedbackText: document.getElementById('correct-feedback-text')
+            },
+            incorrectModal: {
+                answerTitle: document.getElementById('correct-answer-title'),
+                answerText: document.getElementById('correct-answer-text'),
+                explanationTitle: document.getElementById('explanation-title'),
+                explanationText: document.getElementById('explanation-text'),
+                nextBtn: document.getElementById('next-question-btn')
+            },
+            alertModal: {
+                text: document.getElementById('alert-text')
+            }
+        };
+
+        const state = {
+            currentMode: null,
+            currentQuestions: [],
+            currentQuestionIndex: 0,
+            score: 0,
+            pomodoro: { interval: null, timeLeft: 0, currentMode: 'focus' },
+            matchingGame: { flippedCards: [], matchedPairs: 0, canFlip: true, totalPairs: 0 }
+        };
+        
+        // --- 通用頁面切換函數 (簡化且直接) ---
+        const showPage = (pageId) => {
+            console.log(`[Flow] Switching to page: ${pageId}`);
+            for (const key in dom.pages) {
+                if(dom.pages[key]) dom.pages[key].style.display = 'none';
+            }
+            const targetPage = dom.pages[pageId];
+            if (targetPage) {
+                targetPage.style.display = 'flex';
+            } else {
+                console.error(`[Bug] Page with ID "${pageId}" not found in dom.pages!`);
+            }
+        };
+
+        // --- 全局狀態重置並返回主選單 ---
+        const resetAndGoToMainMenu = () => {
+            console.log("[Flow] resetAndGoToMainMenu called. Resetting all states.");
+            // Reset Quiz state
+            state.currentQuestions = []; state.currentQuestionIndex = 0; state.score = 0;
+            if(dom.quiz.progressBar) dom.quiz.progressBar.style.width = '0%';
+            if(dom.quiz.counter) dom.quiz.counter.textContent = '1';
+            if(dom.quiz.answerArea) dom.quiz.answerArea.innerHTML = '';
+            if(dom.quiz.questionText) dom.quiz.questionText.innerHTML = '';
+            if(dom.quiz.feedbackArea) dom.quiz.feedbackArea.style.display = 'none';
+
+            // Reset Pomodoro
+            if (state.pomodoro.interval) { clearInterval(state.pomodoro.interval); }
+            state.pomodoro = { interval: null, timeLeft: 0, currentMode: 'focus' };
+            if(dom.pomodoro.display) dom.pomodoro.display.textContent = formatTime(25 * 60); // Reset timer display
+            if(dom.pomodoro.pauseBtn) dom.pomodoro.pauseBtn.style.display = 'none';
+            if(dom.pomodoro.resumeBtn) dom.pomodoro.resumeBtn.style.display = 'none';
+
+            // Reset Matching Game state (assuming matching game is implemented in HTML)
+            state.matchingGame = { flippedCards: [], matchedPairs: 0, canFlip: true, totalPairs: 0 };
+            if(dom.matchingGame.grid) dom.matchingGame.grid.innerHTML = ''; 
+            if(dom.matchingGame.status) dom.matchingGame.status.textContent = '';
+            
+            showPage('mainMenu');
+        };
+
+        // --- 彈出提示訊息 ---
+        const showAlert = (message) => {
+            if(dom.modals.alert && dom.modals.alert.querySelector('p')) { // 確保元素存在
+                dom.modals.alert.querySelector('p').innerHTML = message;
+                dom.modals.alert.classList.add('active');
+                setTimeout(() => {
+                    dom.modals.alert.classList.remove('active');
+                }, 2500);
+            } else {
+                console.warn("Alert modal or its text element not found.");
+                alert(message); // Fallback to native alert
+            }
+        };
+        
+        // --- 顯示加油小卡 ---
+        const showEncouragementCard = (onStartCallback) => {
+            if(dom.modals.encouragement) {
+                dom.modals.encouragement.classList.add('active');
+                if(dom.encouragement.text) dom.encouragement.text.innerHTML = questionFactory.getRandom(questionFactory.encouragementPhrases);
+                
+                const newOkBtn = dom.encouragement.okBtn.cloneNode(true);
+                dom.encouragement.okBtn.parentNode.replaceChild(newOkBtn, dom.encouragement.okBtn);
+                dom.encouragement.okBtn = newOkBtn; // 更新 DOM 引用
+                
+                newOkBtn.onclick = () => {
+                    console.log("[Flow] Encouragement card '出發！' clicked.");
+                    dom.modals.encouragement.classList.remove('active');
+                    if (onStartCallback) {
+                        onStartCallback();
+                    } else {
+                        console.error("[Bug] 加油小卡沒有收到下一步的指令！");
+                    }
+                };
+            } else {
+                console.error("Encouragement modal not found!");
+                if(onStartCallback) onStartCallback(); // Fallback to just running callback
+            }
+        };
+
+        // --- Quiz Logic ---
+        const startPractice = (mode) => {
+            resetAndGoToMainMenu(); // 清理舊狀態
+            showEncouragementCard(() => {
+                console.log(`[Flow] Starting quiz for mode: ${mode}`);
+                state.currentMode = mode;
+                let title = '';
+                
+                if (mode === 'D') {
+                    // startMatchingGame(); // Implement later
+                    showAlert('翻牌遊戲開發中！');
+                    resetAndGoToMainMenu();
+                    return;
+                }
+
+                const lang = ['A','B','C'].includes(mode) ? 'en' : 'zh';
+                switch (mode) {
+                    case 'A': title = '📖 English Vocabulary'; state.currentQuestions = Array.from({length: 20}, () => questionFactory.generateEnglish('vocab', lang)); break;
+                    case 'B': title = '📖 English Grammar'; state.currentQuestions = Array.from({length: 20}, () => questionFactory.generateEnglish('grammar', lang)); break;
+                    case 'C': title = '📖 English Mixed'; state.currentQuestions = Array.from({length: 20}, () => questionFactory.generateEnglish('mixed', lang)); break;
+                    case 'E': title = '📐 數學綜合習題'; state.currentQuestions = Array.from({length: 20}, () => questionFactory.generateMathProblem()); break;
+                    case 'F': title = '📐 數學混合練習'; state.currentQuestions = Array.from({length: 20}, () => Math.random() > 0.5 ? questionFactory.generateMathProblem() : questionFactory.generateFormulaQuestion()); break;
+                    default: console.error(`Invalid mode: ${mode}`); resetAndGoToMainMenu(); return;
+                }
+                dom.quiz.title.innerHTML = title;
+                showPage('quiz'); // 顯示測驗頁面
+                renderNextQuestion(); // 首次渲染題目
+            });
+        };
+        
+        const renderNextQuestion = () => {
+            console.log(`[Flow] Rendering question #${state.currentQuestionIndex + 1}`);
+            dom.quiz.feedbackArea.style.display = 'none'; // 隱藏答錯回饋區
+            dom.quiz.answerArea.style.pointerEvents = 'auto'; // 啟用選項點擊
+            
+            if (state.currentQuestionIndex >= state.currentQuestions.length) { 
+                showResult(); 
+                return; 
+            }
+            const q = state.currentQuestions[state.currentQuestionIndex];
+            
+            dom.quiz.questionText.innerHTML = ''; // 清空舊內容
+            katex.render(q.question, dom.quiz.questionText, { throwOnError: false, displayMode: true }); // Render LaTeX
+
+            dom.quiz.answerArea.innerHTML = '';
+            q.options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'option-button';
+                btn.onclick = () => handleAnswer(opt === q.answer, q);
+                dom.quiz.answerArea.appendChild(btn);
+                katex.render(String(opt), btn, { throwOnError: false, displayMode: String(opt).includes('\\frac') });
+            });
+            updateQuizProgressBar();
+            dom.quiz.counter.textContent = `${state.currentQuestionIndex + 1}`;
+        };
+
+        const handleAnswer = (isCorrect, question) => {
+            dom.quiz.answerArea.querySelectorAll('.option-button').forEach(b => b.disabled = true);
+            
+            if (isCorrect) {
+                state.score++;
+                dom.correctModal.feedbackText.innerHTML = `${questionFactory.getRandom(questionFactory.encouragementPhrases)} ✅`;
+                dom.modals.correct.classList.add('active');
+                setTimeout(() => {
+                    dom.modals.correct.classList.remove('active');
+                    state.currentQuestionIndex++;
+                    renderNextQuestion(); // 自動進入下一題
+                }, 1200);
+
+            } else {
+                dom.quiz.answerArea.style.pointerEvents = 'none'; // 禁止再點擊選項
+                dom.quiz.feedbackArea.style.display = 'block'; // 顯示答錯回饋區
+
+                const isEn = ['A','B','C'].includes(state.currentMode);
+                dom.quiz.feedbackAnswer.innerHTML = ''; // 清空舊內容
+                katex.render(String(question.answer), dom.quiz.feedbackAnswer, { throwOnError: false, displayMode: String(question.answer).includes('\\frac') });
+                dom.quiz.feedbackExplanation.textContent = question.explanation || question.tense || (isEn ? 'No explanation provided.' : '無解釋。');
+            }
+        };
+        
+        const updateQuizProgressBar = () => {
+            const progress = state.currentQuestions.length > 0 ? (state.currentQuestionIndex / state.currentQuestions.length) * 100 : 0;
+            dom.quiz.progressBar.style.width = `${progress}%`;
+        };
+
+        const showResult = () => {
+            const total = state.currentQuestions.length; const percent = total > 0 ? (state.score / total) * 100 : 0;
+            document.getElementById('result-text').textContent = `您答對了 ${state.score} / ${total} 題 (${percent.toFixed(1)}%)`;
+            showPage('resultPage');
+        };
+
+        // --- Pomodoro Logic ---
+        const formatTime = (s) => `${Math.floor(s/60).toString().padStart(2, '0')}:${(s%60).toString().padStart(2, '0')}`;
+        
+        const updatePomodoroUI = (isRunning, isPaused) => {
+            dom.pomodoro.pauseBtn.style.display = isRunning && !isPaused ? 'inline-block' : 'none';
+            dom.pomodoro.resumeBtn.style.display = isPaused ? 'inline-block' : 'none';
+        };
+
+        const runPomodoro = () => {
+            if (state.pomodoro.timeLeft <= 0) {
+                clearInterval(state.pomodoro.interval);
+                
+                const nextMode = state.pomodoro.currentMode === 'focus' ? 'break' : 'focus';
+                const alertMsg = nextMode === 'break' ? '🍎 專注時間結束，休息一下吧！' : '☕ 休息結束，開始下一輪專注吧！';
+                
+                showAlert(alertMsg);
+                startPomodoro(nextMode); // 自動開始下一個模式
+                return;
+            } 
+            dom.pomodoro.display.textContent = formatTime(state.pomodoro.timeLeft);
+            state.pomodoro.timeLeft--;
+        };
+
+        const startPomodoro = (mode) => {
+            clearInterval(state.pomodoro.interval); // 核心修復：啟動新計時器前，先清除舊的
+            
+            state.pomodoro.currentMode = mode;
+            state.pomodoro.timeLeft = mode === 'focus' ? (25 * 60) : (5 * 60); 
+            
+            dom.pomodoro.title.textContent = mode === 'focus' ? '🍎 專注時間' : '☕ 休息時間';
+            
+            dom.pomodoro.display.textContent = formatTime(state.pomodoro.timeLeft); // 核心修復：立即更新顯示
+            state.pomodoro.timeLeft--; // 預先減一秒，避免畫面上出現兩次相同的秒數
+
+            state.pomodoro.interval = setInterval(runPomodoro, 1000);
+            
+            updatePomodoroUI(true, false);
+            showPage('pomodoro');
+        };
+        const resetPomodoroTimer = () => { // Renamed to avoid conflict
+            clearInterval(state.pomodoro.interval); state.pomodoro.interval = null;
+            showAlert('計時器已重置。');
+            showPage('pomodoroMenu');
+        };
+
+
+        // --- Event Listeners ---
+        document.querySelectorAll('.mode-button').forEach(btn => btn.addEventListener('click', () => startPractice(btn.dataset.mode)));
+        document.querySelectorAll('.back-to-main-menu-btn').forEach(btn => btn.addEventListener('click', resetAndGoToMainMenu));
+        
+        document.getElementById('pomodoro-menu-btn').addEventListener('click', () => showPage('pomodoroMenu'));
+        document.getElementById('start-focus-btn').addEventListener('click', () => startPomodoro('focus'));
+        document.getElementById('start-break-btn').addEventListener('click', () => startPomodoro('break'));
+        dom.pomodoro.pauseBtn.addEventListener('click', () => { clearInterval(state.pomodoro.interval); dom.pomodoro.pauseBtn.style.display = 'none'; dom.pomodoro.resumeBtn.style.display = 'inline-block'; });
+        dom.pomodoro.resumeBtn.addEventListener('click', () => { state.pomodoro.interval = setInterval(runPomodoro, 1000); dom.pomodoro.pauseBtn.style.display = 'inline-block'; dom.pomodoro.resumeBtn.style.display = 'none'; });
+        // dom.pomodoro.resetBtn.addEventListener('click', resetPomodoroTimer); // 重置按鈕已在 HTML 中移除，改用返回主選單
+
+        // 為答錯回饋區的「下一題」按鈕綁定事件
+        dom.quiz.feedbackNextBtn.addEventListener('click', () => { 
+            dom.quiz.feedbackArea.style.display = 'none'; // 隱藏回饋
+            dom.quiz.answerArea.style.pointerEvents = 'auto'; // 啟用點擊
+            state.currentQuestionIndex++; 
+            renderNextQuestion(); 
+        });
+
+        // 初始載入
+        resetAndGoToMainMenu();
+    });
+    </script>
+</body>
+</html>
